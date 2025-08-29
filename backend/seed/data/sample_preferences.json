@@ -1,0 +1,72 @@
+{
+  "food": [
+    {"text": "I absolutely love spicy Thai food with extra chilies", "strength": 2.8},
+    {"text": "Dark chocolate with 70%+ cocoa content is my favorite dessert", "strength": 2.2},
+    {"text": "I'm vegetarian and prefer plant-based protein options", "strength": 3.5},
+    {"text": "Mediterranean cuisine with olive oil and fresh herbs", "strength": 1.9},
+    {"text": "Avoid overly sweet foods, prefer savory or bitter flavors", "strength": 2.1}
+  ],
+  "entertainment": [
+    {"text": "Sci-fi movies and TV shows are my absolute favorite genre", "strength": 3.2},
+    {"text": "Indie rock and alternative music from the 90s-2000s", "strength": 2.7},
+    {"text": "Documentary films about nature and science fascinate me", "strength": 2.4},
+    {"text": "Prefer subtitled foreign films over Hollywood blockbusters", "strength": 1.8},
+    {"text": "True crime podcasts and mystery audiobooks", "strength": 2.9}
+  ],
+  "work-productivity": [
+    {"text": "I work best in quiet environments with minimal distractions", "strength": 3.1},
+    {"text": "Dark mode interfaces reduce eye strain during long work sessions", "strength": 2.6},
+    {"text": "Keyboard shortcuts and automation tools save me time", "strength": 2.8},
+    {"text": "Prefer async communication over constant meetings", "strength": 2.3},
+    {"text": "Break tasks into small chunks with frequent progress tracking", "strength": 2.0}
+  ],
+  "ui-ux": [
+    {"text": "Dark themes are easier on my eyes, especially at night", "strength": 3.4},
+    {"text": "Large, readable fonts are essential for comfortable reading", "strength": 2.5},
+    {"text": "Minimal, clean interfaces without clutter or animations", "strength": 2.2},
+    {"text": "High contrast colors for better accessibility", "strength": 1.9},
+    {"text": "Consistent navigation patterns across all applications", "strength": 2.1}
+  ],
+  "gaming": [
+    {"text": "Strategy games like Civilization and Europa Universalis", "strength": 3.0},
+    {"text": "Prefer single-player RPGs with deep storylines", "strength": 2.8},
+    {"text": "Indie puzzle games with innovative mechanics", "strength": 2.4},
+    {"text": "Avoid fast-paced competitive multiplayer games", "strength": 1.7},
+    {"text": "Turn-based combat systems over real-time action", "strength": 2.3}
+  ],
+  "social": [
+    {"text": "Small group conversations over large social gatherings", "strength": 2.9},
+    {"text": "Prefer text messages over phone calls for casual communication", "strength": 2.6},
+    {"text": "Value deep, meaningful discussions about ideas and concepts", "strength": 3.1},
+    {"text": "Need alone time to recharge after social interactions", "strength": 2.4},
+    {"text": "Online communities centered around shared interests", "strength": 2.2}
+  ],
+  "shopping": [
+    {"text": "Quality over quantity - prefer durable, well-made items", "strength": 3.3},
+    {"text": "Research extensively before making any significant purchase", "strength": 2.8},
+    {"text": "Sustainable and ethically-made products when possible", "strength": 2.5},
+    {"text": "Avoid impulse purchases, prefer planned shopping", "strength": 2.1},
+    {"text": "Local businesses and artisans over big chain stores", "strength": 1.9}
+  ],
+  "health-fitness": [
+    {"text": "Yoga and stretching over high-intensity cardio workouts", "strength": 2.7},
+    {"text": "Walking and hiking in nature for both exercise and mental health", "strength": 3.2},
+    {"text": "Prefer home workouts to crowded gym environments", "strength": 2.4},
+    {"text": "Focus on flexibility and mobility rather than muscle building", "strength": 2.0},
+    {"text": "Mindfulness and meditation as part of daily routine", "strength": 2.6}
+  ],
+  "travel": [
+    {"text": "Cultural immersion and local experiences over tourist attractions", "strength": 3.4},
+    {"text": "Train travel is more enjoyable and sustainable than flying", "strength": 2.3},
+    {"text": "Small boutique hotels or local accommodations over chains", "strength": 2.8},
+    {"text": "Food markets and street food for authentic local cuisine", "strength": 2.9},
+    {"text": "Off-season travel to avoid crowds and get better prices", "strength": 2.1}
+  ],
+  "learning": [
+    {"text": "Hands-on, practical learning over theoretical lectures", "strength": 3.0},
+    {"text": "Video tutorials and visual demonstrations work best for me", "strength": 2.7},
+    {"text": "Short, focused learning sessions rather than long study periods", "strength": 2.4},
+    {"text": "Learning through teaching others solidifies my understanding", "strength": 2.8},
+    {"text": "Real-world projects and applications over abstract examples", "strength": 2.5}
+  ]
+}

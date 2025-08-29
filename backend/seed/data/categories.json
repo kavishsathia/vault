@@ -1,0 +1,52 @@
+[
+  {
+    "name": "Food",
+    "slug": "food",
+    "description": "Dietary preferences, cuisine types, spice tolerance"
+  },
+  {
+    "name": "Entertainment", 
+    "slug": "entertainment",
+    "description": "Movie genres, music styles, content preferences"
+  },
+  {
+    "name": "Work & Productivity",
+    "slug": "work-productivity", 
+    "description": "Workflow preferences, tool choices, communication styles"
+  },
+  {
+    "name": "UI/UX",
+    "slug": "ui-ux",
+    "description": "Dark mode, font sizes, layout preferences, accessibility needs"
+  },
+  {
+    "name": "Gaming",
+    "slug": "gaming",
+    "description": "Difficulty levels, game genres, control schemes"
+  },
+  {
+    "name": "Social",
+    "slug": "social", 
+    "description": "Interaction preferences, privacy levels, communication frequency"
+  },
+  {
+    "name": "Shopping",
+    "slug": "shopping",
+    "description": "Brand preferences, price sensitivity, product categories"
+  },
+  {
+    "name": "Health & Fitness",
+    "slug": "health-fitness",
+    "description": "Activity types, intensity levels, health goals"
+  },
+  {
+    "name": "Travel",
+    "slug": "travel",
+    "description": "Accommodation preferences, transportation, activity types"
+  },
+  {
+    "name": "Learning",
+    "slug": "learning", 
+    "description": "Learning styles, content formats, difficulty progression"
+  }
+]

@@ -1,0 +1,27 @@
+[
+  {
+    "name": "FoodieApp",
+    "description": "AI-powered food recommendations and meal planning",
+    "api_key": "vault_foodie_demo_key_123456"
+  },
+  {
+    "name": "SpotifyAI", 
+    "description": "Intelligent music discovery and playlist generation",
+    "api_key": "vault_spotify_demo_key_789012"
+  },
+  {
+    "name": "WorkFlow",
+    "description": "Productivity enhancement and task management",
+    "api_key": "vault_workflow_demo_key_345678"
+  },
+  {
+    "name": "GameRecommender",
+    "description": "Personalized game recommendations based on preferences",
+    "api_key": "vault_games_demo_key_901234"
+  },
+  {
+    "name": "TravelBuddy",
+    "description": "Smart travel planning and destination recommendations", 
+    "api_key": "vault_travel_demo_key_567890"
+  }
+]

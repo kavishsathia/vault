@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "vault": {
+        "command": "/Users/kavishsathia/Documents/Side Projects/vault/vault-desktop/venv/bin/python",
+        "args": ["/Users/kavishsathia/Documents/Side Projects/vault/vault-desktop/src/vault_mcp_server.py"],
+        "env": {
+          "VAULT_API_URL": "http://localhost:8000/api",
+          "VAULT_ACCESS_TOKEN": "${VAULT_ACCESS_TOKEN}"
+        }
+      }
+    }
+}

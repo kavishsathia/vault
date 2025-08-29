@@ -1,0 +1,80 @@
+@import "tailwindcss";
+
+:root {
+  /* Vault Dark Theme */
+  --background: #0a0a0b;
+  --surface: #141416;
+  --surface-light: #1a1a1c;
+  --foreground: #ededed;
+  --foreground-muted: #a1a1aa;
+  --foreground-light: #cccccc;
+  
+  /* Purple Brand Colors */
+  --purple-primary: #8b5cf6;
+  --purple-light: #c084fc;
+  --purple-dark: #7c3aed;
+  
+  /* Category Colors (soft pastels on dark) */
+  --food: #f59e0b;
+  --entertainment: #ef4444;
+  --work: #06b6d4;
+  --ui-ux: #8b5cf6;
+  --gaming: #10b981;
+  --social: #f97316;
+  --shopping: #ec4899;
+  --health: #84cc16;
+  --travel: #3b82f6;
+  --learning: #6366f1;
+  
+  /* Status Colors */
+  --success: #10b981;
+  --warning: #f59e0b;
+  --error: #ef4444;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-light: var(--surface-light);
+  --color-foreground: var(--foreground);
+  --color-foreground-muted: var(--foreground-muted);
+  --color-foreground-light: var(--foreground-light);
+  
+  --color-purple-primary: var(--purple-primary);
+  --color-purple-light: var(--purple-light);
+  --color-purple-dark: var(--purple-dark);
+  
+  --font-body: var(--font-manrope);
+  --font-heading: var(--font-galindo);
+}
+
+/* Make font-heading available as a Tailwind utility */
+@layer utilities {
+  .font-heading {
+    font-family: var(--font-galindo);
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-manrope), system-ui, sans-serif;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--surface);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--purple-primary);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--purple-light);
+}
