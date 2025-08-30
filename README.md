@@ -113,9 +113,15 @@ Instead of storing raw preferences, Vault converts text to semantic embeddings:
 ```
 
 #### **2. Similarity-Based Intelligence**  
-Apps query with embeddings and get similarity scores:
+Apps query with multiple embeddings and get top matching contexts:
 ```typescript
-query("vegetarian dinner options") → 0.73 // 73% match with user preferences
+queryContexts([
+  embedding("vegetarian dinner options"),
+  embedding("healthy meal suggestions")  
+]) → [
+  [{ text: "I prefer plant-based meals", score: 0.87 }], // Top contexts for query 1
+  [{ text: "Low-calorie foods are important", score: 0.74 }] // Top contexts for query 2
+]
 ```
 
 #### **3. Game Theory Anti-Gaming**
@@ -372,18 +378,36 @@ python test_integration.py
 
 ### **Query User Preferences**
 ```bash
-curl -X POST "http://localhost:8000/api/preferences/query?user_id=USER_UUID&app_id=APP_UUID" \
+curl -X POST "http://localhost:8000/api/preferences/query-contexts?user_id=USER_UUID&app_id=APP_UUID" \
   -H "Content-Type: application/json" \
   -d '{
-    "embedding": [0.1, -0.2, 0.8, ...],  
+    "embeddings": [
+      [0.1, -0.2, 0.8, ...],  # First query embedding (384 dims)
+      [0.3, 0.1, -0.4, ...]   # Second query embedding (384 dims)
+    ],
     "context": "dinner_recommendations"
   }'
 
 # Response:
 {
-  "score": 0.73,      # Similarity score with noise
-  "confidence": 0.91, # Confidence level  
-  "noise_level": 0.05 # Amount of noise added
+  "results": [
+    [  # Top 3 contexts for first embedding
+      {
+        "text": "I love spicy Thai food with extra chilies",
+        "category": "Food", 
+        "score": 0.87
+      },
+      {
+        "text": "Italian pasta is my comfort food",
+        "category": "Food",
+        "score": 0.73  
+      }
+    ],
+    [  # Top 3 contexts for second embedding
+      { "text": "...", "category": "...", "score": 0.65 }
+    ]
+  ],
+  "noise_level": 0.05  # Amount of noise added to all scores
 }
 ```
 
