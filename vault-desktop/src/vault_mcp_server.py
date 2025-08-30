@@ -12,6 +12,8 @@ from fastmcp import FastMCP
 import requests
 from pydantic import BaseModel
 import json
+import subprocess
+import platform
 from pathlib import Path
 
 # Logging to stderr to avoid corrupting MCP JSON-RPC messages
@@ -27,15 +29,17 @@ logger = logging.getLogger(__name__)
 mcp = FastMCP("Vault Preference Server")
 
 class VaultAPIClient:
-    """Client for interacting with Vault API using OAuth tokens"""
+    """Client for interacting with Vault API using OAuth tokens with privacy transformation"""
     
     def __init__(self):
         self.access_token = self._load_access_token()
+        self.credentials_hash = self._get_credentials_hash_from_token()
         self.base_url = os.getenv("VAULT_API_URL", "http://localhost:8000/api")
         self.user_id = self._get_user_id_from_token()
         
         self.headers = {"Authorization": f"Bearer {self.access_token}"}
         self.timeout = 30.0
+        self.privacy_matrix = None
     
     def _load_access_token(self) -> str:
         """Load OAuth access token from config file or environment"""
@@ -70,14 +74,159 @@ class VaultAPIClient:
                 pass
         return ""
     
+    def _get_credentials_hash_from_token(self) -> str:
+        """Extract credentials hash from JWT token"""
+        try:
+            # In production, properly decode JWT
+            # For now, assume we store credentials_hash in config
+            config_path = Path.home() / ".vault" / "config.json"
+            if config_path.exists():
+                with open(config_path) as f:
+                    config = json.load(f)
+                    return config.get("credentials_hash", "")
+        except Exception:
+            pass
+        return ""
+    
+    def _prompt_for_privacy_seed(self) -> Optional[str]:
+        """Trigger desktop app to prompt for privacy seed"""
+        try:
+            logger.info("Triggering desktop app for privacy seed prompt...")
+            
+            # Launch desktop app with seed prompt flag
+            desktop_script = Path(__file__).parent / "desktop_app.py"
+            if platform.system() == "Darwin":  # macOS
+                subprocess.Popen([
+                    sys.executable, str(desktop_script), "--prompt-seed"
+                ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            elif platform.system() == "Windows":
+                subprocess.Popen([
+                    sys.executable, str(desktop_script), "--prompt-seed"
+                ], shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            else:  # Linux
+                subprocess.Popen([
+                    sys.executable, str(desktop_script), "--prompt-seed"
+                ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            
+            # Wait for seed to be saved
+            config_path = Path.home() / ".vault" / "temp_seed.txt"
+            for _ in range(30):  # Wait up to 30 seconds
+                if config_path.exists():
+                    try:
+                        with open(config_path) as f:
+                            seed = f.read().strip()
+                        config_path.unlink()  # Delete after reading
+                        if self._validate_seed(seed):
+                            return seed
+                    except Exception:
+                        pass
+                import time
+                time.sleep(1)
+            
+            logger.warning("Timeout waiting for privacy seed")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Failed to prompt for privacy seed: {e}")
+            return None
+    
+    def _validate_seed(self, seed: str) -> bool:
+        """Validate 6-digit seed format"""
+        import re
+        return bool(re.match(r'^\d{6}$', seed))
+    
+    def _ensure_privacy_matrix(self) -> bool:
+        """Ensure privacy matrix is initialized"""
+        if self.privacy_matrix is not None:
+            return True
+            
+        if not self.credentials_hash:
+            logger.error("No credentials hash available for matrix generation")
+            return False
+        
+        # Try to get seed from user
+        seed = self._prompt_for_privacy_seed()
+        if not seed:
+            logger.error("Failed to get privacy seed from user")
+            return False
+        
+        # Generate matrix
+        try:
+            self.privacy_matrix = self._generate_privacy_matrix(self.credentials_hash, seed)
+            logger.info("Privacy matrix generated successfully")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to generate privacy matrix: {e}")
+            return False
+    
+    def _generate_privacy_matrix(self, credentials_hash: str, seed: str) -> List[List[float]]:
+        """Generate deterministic orthogonal matrix from credentials hash + seed"""
+        import hashlib
+        import random
+        
+        # Create final seed
+        final_seed = f"{credentials_hash}:{seed}"
+        seed_hash = hashlib.sha256(final_seed.encode()).hexdigest()
+        
+        # Seed random number generator
+        random.seed(seed_hash)
+        
+        # Generate 384x384 matrix
+        size = 384
+        matrix = []
+        for i in range(size):
+            row = []
+            for j in range(size):
+                row.append(random.uniform(-0.5, 0.5))
+            matrix.append(row)
+        
+        # Gram-Schmidt orthogonalization
+        for i in range(size):
+            # Normalize current vector
+            norm = sum(matrix[i][j] ** 2 for j in range(size)) ** 0.5
+            if norm > 0:
+                for j in range(size):
+                    matrix[i][j] /= norm
+            
+            # Orthogonalize remaining vectors
+            for k in range(i + 1, size):
+                dot_product = sum(matrix[i][j] * matrix[k][j] for j in range(size))
+                for j in range(size):
+                    matrix[k][j] -= dot_product * matrix[i][j]
+        
+        return matrix
+    
+    def _transform_embedding(self, embedding: List[float]) -> List[float]:
+        """Apply privacy transformation to embedding"""
+        if not self.privacy_matrix:
+            raise ValueError("Privacy matrix not initialized")
+        
+        if len(embedding) != 384:
+            raise ValueError(f"Expected 384-dimensional embedding, got {len(embedding)}")
+        
+        # Matrix multiplication
+        transformed = []
+        for i in range(384):
+            sum_val = sum(self.privacy_matrix[i][j] * embedding[j] for j in range(384))
+            transformed.append(sum_val)
+        
+        return transformed
+    
     def query_preferences(self, query_embedding: List[float], context: Optional[str] = None) -> Dict[str, Any]:
         """Query user preferences by similarity"""
         try:
+            # Ensure privacy matrix is ready
+            if not self._ensure_privacy_matrix():
+                return {"error": "Privacy matrix not available - user may have cancelled seed prompt"}
+            
+            # Transform embedding for privacy
+            transformed_embedding = self._transform_embedding(query_embedding)
+            
             response = requests.post(
                 f"{self.base_url}/preferences/query",
                 params={"user_id": self.user_id, "app_id": "vault-mcp-server"},
                 json={
-                    "embedding": query_embedding,
+                    "embedding": transformed_embedding,
                     "context": context
                 },
                 headers=self.headers,
@@ -92,16 +241,23 @@ class VaultAPIClient:
     def add_preference(self, text: str, category_slug: Optional[str] = None, strength: float = 1.0) -> Dict[str, Any]:
         """Add a new preference"""
         try:
+            # Ensure privacy matrix is ready
+            if not self._ensure_privacy_matrix():
+                return {"error": "Privacy matrix not available - user may have cancelled seed prompt"}
+            
             # For now, we'll need to generate embeddings client-side
             # In production, this would use a proper embedding model
-            embedding = [0.0] * 1536  # Placeholder embedding
+            embedding = [0.0] * 384  # Placeholder embedding (correct dimensions)
+            
+            # Transform embedding for privacy
+            transformed_embedding = self._transform_embedding(embedding)
             
             response = requests.post(
                 f"{self.base_url}/preferences/add",
                 params={"user_id": self.user_id},
                 json={
                     "text": text,
-                    "embedding": embedding,
+                    "embedding": transformed_embedding,
                     "category_slug": category_slug,
                     "strength": strength
                 },

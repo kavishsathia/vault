@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '../api/client';
+import { initializePrivacyMatrix, clearPrivacyMatrix } from '../services/privacy-transform';
 
 interface User {
   id: string;
@@ -17,8 +18,8 @@ interface AuthContextType {
   user: User | null;
   token: string | null;
   isLoading: boolean;
-  signin: (email: string, password: string) => Promise<void>;
-  signup: (email: string, password: string, name?: string) => Promise<void>;
+  signin: (email: string, password: string, privacySeed: string) => Promise<void>;
+  signup: (email: string, password: string, privacySeed: string, name?: string) => Promise<void>;
   signout: () => void;
   isAuthenticated: boolean;
 }
@@ -50,8 +51,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(false);
   }, []);
 
-  const signin = async (email: string, password: string) => {
+  const signin = async (email: string, password: string, privacySeed: string) => {
     try {
+      // Initialize privacy matrix first (validates seed format)
+      await initializePrivacyMatrix(email, password, privacySeed);
+      
+      // Then authenticate with backend (seed never sent)
       const response = await apiClient.signin({ email, password });
       
       // Store token and user data
@@ -64,12 +69,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Redirect to dashboard
       router.push('/');
     } catch (error: any) {
+      // Clear matrix on auth failure
+      clearPrivacyMatrix();
       throw new Error(error.message || 'Sign in failed');
     }
   };
 
-  const signup = async (email: string, password: string, name?: string) => {
+  const signup = async (email: string, password: string, privacySeed: string, name?: string) => {
     try {
+      // Initialize privacy matrix first (validates seed format)
+      await initializePrivacyMatrix(email, password, privacySeed);
+      
+      // Then create account with backend (seed never sent)
       const response = await apiClient.signup({ email, password, name });
       
       // Store token and user data
@@ -82,6 +93,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Redirect to dashboard
       router.push('/');
     } catch (error: any) {
+      // Clear matrix on auth failure
+      clearPrivacyMatrix();
       throw new Error(error.message || 'Sign up failed');
     }
   };
@@ -90,6 +103,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Clear stored data
     localStorage.removeItem('vault_token');
     localStorage.removeItem('vault_user');
+    
+    // Clear privacy matrix from memory (security)
+    clearPrivacyMatrix();
     
     setToken(null);
     setUser(null);

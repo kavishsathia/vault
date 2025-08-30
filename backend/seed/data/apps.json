@@ -23,5 +23,10 @@
     "name": "TravelBuddy",
     "description": "Smart travel planning and destination recommendations", 
     "api_key": "vault_travel_demo_key_567890"
+  },
+  {
+    "name": "VaultDemo",
+    "description": "Vault preference integration demo - instant UI personalization",
+    "api_key": "vault_demo_app_key_123789"
   }
 ]

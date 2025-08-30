@@ -75,6 +75,7 @@ class OAuthTokenResponse(BaseModel):
     expires_in: int = Field(..., description="Token expiration time in seconds")
     refresh_token: Optional[str] = Field(None, description="Refresh token")
     scope: str = Field(..., description="Granted scopes (space-separated)")
+    credentials_hash: Optional[str] = Field(None, description="User credentials hash for privacy matrix generation")
 
 
 # OAuth Error Response

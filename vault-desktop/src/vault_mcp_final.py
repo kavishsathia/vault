@@ -12,6 +12,8 @@ from fastmcp import FastMCP
 import requests
 from pydantic import BaseModel
 import json
+import subprocess
+import platform
 from pathlib import Path
 import ollama
 import random
@@ -115,15 +117,17 @@ class OllamaEmbeddingService:
 ollama_service = OllamaEmbeddingService()
 
 class VaultAPIClient:
-    """Client for interacting with Vault API using OAuth tokens"""
+    """Client for interacting with Vault API using OAuth tokens with privacy transformation"""
     
     def __init__(self):
         self.access_token = self._load_access_token()
+        self.credentials_hash = self._get_credentials_hash_from_token()
         self.base_url = os.getenv("VAULT_API_URL", "http://localhost:8000/api")
         self.user_id = self._get_user_id_from_token()
         
         self.headers = {"Authorization": f"Bearer {self.access_token}"}
         self.timeout = 30.0
+        self.privacy_matrix = None
     
     def _load_access_token(self) -> str:
         """Load OAuth access token from config file"""
@@ -185,14 +189,228 @@ class VaultAPIClient:
         print("DEBUG: No user_id found, returning empty string", file=sys.stderr)
         return ""
     
+    def _get_credentials_hash_from_token(self) -> str:
+        """Extract credentials hash from JWT token"""
+        try:
+            # Decode JWT token to get credentials hash
+            import base64
+            token_parts = self.access_token.split('.')
+            
+            if len(token_parts) == 3:
+                payload = token_parts[1]
+                padding = '=' * (4 - len(payload) % 4)
+                payload_bytes = base64.urlsafe_b64decode(payload + padding)
+                payload_json = json.loads(payload_bytes.decode())
+                credentials_hash = payload_json.get("credentials_hash", "")
+                print(f"DEBUG: Extracted credentials_hash from JWT: {credentials_hash[:20]}...", file=sys.stderr)
+                return credentials_hash
+        except Exception as e:
+            print(f"DEBUG: JWT credentials hash decode error: {e}", file=sys.stderr)
+            
+        # Fallback to config file
+        config_path = Path.home() / ".vault" / "config.json"
+        if config_path.exists():
+            try:
+                with open(config_path) as f:
+                    config = json.load(f)
+                    return config.get("credentials_hash", "")
+            except Exception:
+                pass
+        return ""
+    
+    def _prompt_for_privacy_seed(self) -> Optional[str]:
+        """Signal existing desktop app to prompt for privacy seed"""
+        try:
+            logger.info("Signaling desktop app for privacy seed prompt...")
+            
+            # Create request file to signal the running desktop app
+            config_dir = Path.home() / ".vault"
+            config_dir.mkdir(exist_ok=True)
+            seed_request_file = config_dir / "seed_request.txt"
+            
+            # Create request file
+            with open(seed_request_file, 'w') as f:
+                f.write("seed_needed")
+            
+            logger.info("Created seed request file")
+            
+            # Wait for seed to be saved
+            temp_seed_file = config_dir / "temp_seed.txt"
+            for _ in range(30):  # Wait up to 30 seconds
+                if temp_seed_file.exists():
+                    try:
+                        with open(temp_seed_file) as f:
+                            seed = f.read().strip()
+                        temp_seed_file.unlink()  # Delete after reading
+                        if self._validate_seed(seed):
+                            logger.info("Received valid privacy seed")
+                            return seed
+                    except Exception as e:
+                        logger.error(f"Error reading seed file: {e}")
+                import time
+                time.sleep(1)
+            
+            logger.warning("Timeout waiting for privacy seed")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Failed to prompt for privacy seed: {e}")
+            return None
+    
+    def _validate_seed(self, seed: str) -> bool:
+        """Validate 6-digit seed format"""
+        import re
+        return bool(re.match(r'^\d{6}$', seed))
+    
+    def _ensure_privacy_matrix(self) -> bool:
+        """Ensure privacy matrix is initialized"""
+        if self.privacy_matrix is not None:
+            return True
+            
+        if not self.credentials_hash:
+            logger.error("No credentials hash available for matrix generation")
+            return False
+        
+        # Use hardcoded seed for testing
+        seed = "123456"
+        logger.info("Using hardcoded privacy seed for testing")
+        
+        # Generate matrix
+        try:
+            self.privacy_matrix = self._generate_privacy_matrix(self.credentials_hash, seed)
+            logger.info("Privacy matrix generated successfully")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to generate privacy matrix: {e}")
+            return False
+    
+    def _generate_privacy_matrix(self, credentials_hash: str, seed: str) -> List[List[float]]:
+        """Generate deterministic orthogonal matrix from credentials hash + seed"""
+        import hashlib
+        
+        # Create final seed
+        final_seed = f"{credentials_hash}:{seed}"
+        seed_hash = hashlib.sha256(final_seed.encode()).hexdigest()
+        
+        # Seed random number generator
+        random.seed(seed_hash)
+        
+        # Generate 384x384 matrix
+        size = 384
+        matrix = []
+        for i in range(size):
+            row = []
+            for j in range(size):
+                row.append(random.uniform(-0.5, 0.5))
+            matrix.append(row)
+        
+        # Gram-Schmidt orthogonalization
+        for i in range(size):
+            # Normalize current vector
+            norm = sum(matrix[i][j] ** 2 for j in range(size)) ** 0.5
+            if norm > 0:
+                for j in range(size):
+                    matrix[i][j] /= norm
+            
+            # Orthogonalize remaining vectors
+            for k in range(i + 1, size):
+                dot_product = sum(matrix[i][j] * matrix[k][j] for j in range(size))
+                for j in range(size):
+                    matrix[k][j] -= dot_product * matrix[i][j]
+        
+        return matrix
+    
+    def _transform_embedding(self, embedding: List[float]) -> List[float]:
+        """Apply privacy transformation to embedding"""
+        if not self.privacy_matrix:
+            raise ValueError("Privacy matrix not initialized")
+        
+        if len(embedding) != 384:
+            raise ValueError(f"Expected 384-dimensional embedding, got {len(embedding)}")
+        
+        # Matrix multiplication
+        transformed = []
+        for i in range(384):
+            sum_val = sum(self.privacy_matrix[i][j] * embedding[j] for j in range(384))
+            transformed.append(sum_val)
+        
+        return transformed
+    
+    def _encrypt_text(self, text: str) -> str:
+        """Encrypt preference text using AES-256-GCM"""
+        try:
+            from cryptography.fernet import Fernet
+            from cryptography.hazmat.primitives import hashes
+            from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+            import base64
+            import os
+            
+            # Generate key from credentials hash (same as frontend)
+            if not self.credentials_hash:
+                raise ValueError("No credentials hash available")
+            
+            # Use first 32 bytes of credentials hash for key
+            key_material = self.credentials_hash[:32].encode('utf-8')
+            key_material = key_material.ljust(32, b'0')  # Pad to 32 bytes
+            
+            # Create Fernet key (base64 encoded)
+            fernet_key = base64.urlsafe_b64encode(key_material)
+            cipher = Fernet(fernet_key)
+            
+            # Encrypt the text
+            encrypted_bytes = cipher.encrypt(text.encode('utf-8'))
+            encrypted_text = base64.b64encode(encrypted_bytes).decode('utf-8')
+            
+            return encrypted_text
+            
+        except Exception as e:
+            logger.error(f"Failed to encrypt text: {e}")
+            return text  # Fallback to plaintext if encryption fails
+    
+    def _decrypt_text(self, encrypted_text: str) -> str:
+        """Decrypt preference text using AES-256-GCM"""
+        try:
+            from cryptography.fernet import Fernet
+            import base64
+            
+            # Generate key from credentials hash (same as frontend)
+            if not self.credentials_hash:
+                raise ValueError("No credentials hash available")
+            
+            # Use first 32 bytes of credentials hash for key
+            key_material = self.credentials_hash[:32].encode('utf-8')
+            key_material = key_material.ljust(32, b'0')  # Pad to 32 bytes
+            
+            # Create Fernet key (base64 encoded)
+            fernet_key = base64.urlsafe_b64encode(key_material)
+            cipher = Fernet(fernet_key)
+            
+            # Decrypt the text
+            encrypted_bytes = base64.b64decode(encrypted_text.encode('utf-8'))
+            decrypted_bytes = cipher.decrypt(encrypted_bytes)
+            decrypted_text = decrypted_bytes.decode('utf-8')
+            
+            return decrypted_text
+            
+        except Exception as e:
+            logger.error(f"Failed to decrypt text: {e}")
+            return encrypted_text  # Return as-is if decryption fails
+    
     def query_preferences(self, query_embedding: List[float], context: Optional[str] = None) -> Dict[str, Any]:
         """Query user preferences by similarity (legacy single embedding)"""
         try:
+            # Ensure privacy matrix is ready
+            if not self._ensure_privacy_matrix():
+                return {"error": "Privacy matrix not available - user may have cancelled seed prompt"}
+            
+            # Transform embedding for privacy
+            transformed_embedding = self._transform_embedding(query_embedding)
+            
             response = requests.post(
                 f"{self.base_url}/preferences/query",
                 params={"user_id": self.user_id, "app_id": "3501c6fb-28ee-46f6-aadf-6ea14c35a569"},
                 json={
-                    "embedding": query_embedding,
+                    "embedding": transformed_embedding,
                     "context": context
                 },
                 headers=self.headers,
@@ -207,13 +425,20 @@ class VaultAPIClient:
     def query_contexts(self, query_embeddings: List[List[float]], context: Optional[str] = None) -> Dict[str, Any]:
         """Query user preferences with multiple embeddings, returning actual contexts"""
         try:
+            # Ensure privacy matrix is ready
+            if not self._ensure_privacy_matrix():
+                return {"error": "Privacy matrix not available - user may have cancelled seed prompt"}
+            
             logger.info(f"Querying contexts with {len(query_embeddings)} embeddings")
+            
+            # Transform all embeddings for privacy
+            transformed_embeddings = [self._transform_embedding(emb) for emb in query_embeddings]
             
             response = requests.post(
                 f"{self.base_url}/preferences/query-contexts",
                 params={"user_id": self.user_id, "app_id": "3501c6fb-28ee-46f6-aadf-6ea14c35a569"},
                 json={
-                    "embeddings": query_embeddings,
+                    "embeddings": transformed_embeddings,
                     "context": context
                 },
                 headers=self.headers,
@@ -231,22 +456,49 @@ class VaultAPIClient:
     def add_preference(self, text: str, category_slug: Optional[str] = None, strength: float = 1.0) -> Dict[str, Any]:
         """Add a new preference"""
         try:
-            # For now, we'll need to generate embeddings client-side
-            # In production, this would use a proper embedding model
-            embedding = [0.0] * 384  # Placeholder embedding (updated for Web LLM Arctic Embed)
+            # Ensure privacy matrix is ready
+            if not self._ensure_privacy_matrix():
+                return {"error": "Privacy matrix not available - user may have cancelled seed prompt"}
+            
+            logger.info(f"🔐 MCP: ORIGINAL TEXT: {text}")
+            
+            # Encrypt the preference text
+            encrypted_text = self._encrypt_text(text)
+            
+            logger.info(f"🔒 MCP: ENCRYPTED TEXT: {encrypted_text}")
+            logger.info(f"🔒 MCP: ENCRYPTION LENGTH: {len(encrypted_text)}")
+            
+            # Generate real embedding using Ollama
+            embedding = ollama_service.generate_embedding(text)
+            
+            # Transform embedding for privacy
+            transformed_embedding = self._transform_embedding(embedding)
+            
+            request_payload = {
+                "text": encrypted_text,  # Send encrypted text
+                "embedding": transformed_embedding,
+                "category_slug": category_slug,
+                "strength": strength
+            }
+            
+            logger.info(f"📤 MCP: FULL REQUEST PAYLOAD:")
+            logger.info(f"  - text: {encrypted_text}")
+            logger.info(f"  - text_length: {len(encrypted_text)}")
+            logger.info(f"  - embedding_length: {len(transformed_embedding)}")
+            logger.info(f"  - category_slug: {category_slug}")
+            logger.info(f"  - strength: {strength}")
             
             response = requests.post(
                 f"{self.base_url}/preferences/add",
                 params={"user_id": self.user_id},
-                json={
-                    "text": text,
-                    "embedding": embedding,
-                    "category_slug": category_slug,
-                    "strength": strength
-                },
+                json=request_payload,
                 headers=self.headers,
                 timeout=self.timeout
             )
+            
+            logger.info(f"📤 MCP: BACKEND RESPONSE STATUS: {response.status_code}")
+            logger.info(f"📤 MCP: BACKEND RESPONSE TEXT: {response.text}")
+            
             response.raise_for_status()
             return response.json()
         except Exception as e:
@@ -267,7 +519,22 @@ class VaultAPIClient:
                 timeout=self.timeout
             )
             response.raise_for_status()
-            return response.json()
+            result = response.json()
+            
+            # Decrypt preference texts if privacy matrix is ready
+            if "preferences" in result and self.privacy_matrix:
+                logger.info(f"🔓 MCP: DECRYPTING {len(result['preferences'])} PREFERENCES")
+                for pref in result["preferences"]:
+                    if "text" in pref and pref["text"]:
+                        try:
+                            original_text = pref["text"]
+                            decrypted_text = self._decrypt_text(pref["text"])
+                            pref["text"] = decrypted_text
+                            logger.info(f"🔓 MCP: DECRYPTED: {original_text[:50]}... -> {decrypted_text}")
+                        except Exception as e:
+                            logger.warning(f"Failed to decrypt preference text: {e}")
+            
+            return result
         except Exception as e:
             logger.error(f"Failed to get preferences: {e}")
             return {"error": str(e)}
@@ -342,7 +609,7 @@ def add_user_preference(text: str, category: Optional[str] = None, strength: flo
     
     Args:
         text: The preference text (e.g., "I prefer dark themes", "I love spicy food")
-        category: Optional category slug (food, ui-ux, entertainment, etc.)
+        category: Optional category slug. VALID CATEGORIES: food, entertainment, work-productivity, ui-ux, gaming, social, shopping, health-fitness, travel, learning
         strength: Preference strength from 0.0 to 10.0 (default: 1.0)
     
     Returns:

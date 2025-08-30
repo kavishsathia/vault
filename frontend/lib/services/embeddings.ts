@@ -1,6 +1,7 @@
 'use client';
 
 import { CreateMLCEngine, MLCEngine } from "@mlc-ai/web-llm";
+import { transformEmbedding } from './privacy-transform';
 
 class EmbeddingService {
   private engine: MLCEngine | null = null;
@@ -62,7 +63,7 @@ class EmbeddingService {
     }
   }
 
-  async generateEmbedding(text: string): Promise<Float32Array> {
+  async generateEmbedding(text: string, enablePrivacy: boolean = true): Promise<number[]> {
     console.log('🎯 EmbeddingService: generateEmbedding called', { 
       textLength: text.length, 
       textPreview: text.substring(0, 50) + (text.length > 50 ? '...' : '')
@@ -117,7 +118,15 @@ class EmbeddingService {
         console.log('📏 EmbeddingService: Using actual embedding dimensions from model');
       }
 
-      return embedding;
+      // Apply privacy transformation if enabled
+      if (enablePrivacy) {
+        console.log('🔐 EmbeddingService: Applying privacy transformation...');
+        const transformed = transformEmbedding(embedding);
+        console.log('✅ EmbeddingService: Privacy transformation applied');
+        return transformed;
+      }
+
+      return Array.from(embedding);
 
     } catch (error) {
       console.error('❌ EmbeddingService: Failed to generate embedding:', error);
@@ -125,7 +134,7 @@ class EmbeddingService {
     }
   }
 
-  async generateMultipleEmbeddings(texts: string[]): Promise<Float32Array[]> {
+  async generateMultipleEmbeddings(texts: string[], enablePrivacy: boolean = true): Promise<number[][]> {
     console.log('🎯 EmbeddingService: generateMultipleEmbeddings called', { 
       count: texts.length,
       textPreviews: texts.slice(0, 3).map(text => 
@@ -133,12 +142,12 @@ class EmbeddingService {
       )
     });
 
-    const results: Float32Array[] = [];
+    const results: number[][] = [];
     const startTime = performance.now();
 
     for (let i = 0; i < texts.length; i++) {
       console.log(`🔄 EmbeddingService: Processing text ${i + 1}/${texts.length}`);
-      const embedding = await this.generateEmbedding(texts[i]);
+      const embedding = await this.generateEmbedding(texts[i], enablePrivacy);
       results.push(embedding);
     }
 
@@ -170,10 +179,10 @@ class EmbeddingService {
 // Create singleton instance
 export const embeddingService = new EmbeddingService();
 
-// Helper function to convert Float32Array to regular array for JSON serialization
-export function embeddingToArray(embedding: Float32Array): number[] {
+// Helper function for backward compatibility (now returns transformed by default)
+export function embeddingToArray(embedding: Float32Array | number[]): number[] {
   const array = Array.from(embedding);
-  console.log('🔄 EmbeddingService: Converted Float32Array to Array', {
+  console.log('🔄 EmbeddingService: Converted to Array', {
     length: array.length,
     sampleValues: array.slice(0, 5).map(v => v.toFixed(4))
   });

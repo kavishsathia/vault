@@ -8,7 +8,8 @@ import { useAuth } from '../../../lib/contexts/auth-context';
 export default function SignInPage() {
   const [formData, setFormData] = useState({
     email: '',
-    password: ''
+    password: '',
+    privacySeed: ''
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -37,7 +38,7 @@ export default function SignInPage() {
     setError('');
 
     try {
-      await signin(formData.email, formData.password);
+      await signin(formData.email, formData.password, formData.privacySeed);
       
       // After successful signin, redirect to return URL if present
       if (returnUrl) {
@@ -120,6 +121,31 @@ export default function SignInPage() {
               placeholder="Enter your password"
               disabled={isLoading}
             />
+          </div>
+
+          <div>
+            <label htmlFor="privacySeed" className="block text-sm font-medium text-[var(--foreground-light)] mb-2">
+              Privacy Seed
+              <span className="text-xs text-[var(--foreground-muted)] ml-2">
+                (6 digits, never stored on servers)
+              </span>
+            </label>
+            <input
+              id="privacySeed"
+              name="privacySeed"
+              type="text"
+              pattern="[0-9]{6}"
+              maxLength={6}
+              required
+              value={formData.privacySeed}
+              onChange={handleChange}
+              className="w-full bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg px-4 py-3 text-white placeholder-[var(--foreground-muted)] focus:outline-none focus:border-[var(--purple-primary)] transition-colors text-center tracking-widest font-mono"
+              placeholder="000000"
+              disabled={isLoading}
+            />
+            <p className="text-xs text-[var(--foreground-muted)] mt-1">
+              This seed encrypts your preferences. If you forget it, your data is permanently lost.
+            </p>
           </div>
 
           <button

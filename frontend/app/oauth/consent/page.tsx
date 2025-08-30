@@ -257,8 +257,22 @@ function OAuthConsentForm() {
           </button>
         </div>
 
+        {/* Privacy warning */}
+        <div className="mt-6 bg-[var(--warning)]/10 border border-[var(--warning)]/20 rounded-lg p-4">
+          <div className="flex items-start space-x-3">
+            <div className="text-[var(--warning)] text-lg">🔐</div>
+            <div className="flex-1">
+              <h4 className="text-[var(--warning)] font-medium mb-1">Privacy Seed Required</h4>
+              <p className="text-[var(--foreground-muted)] text-sm">
+                After authorization, this app will prompt you for your 6-digit privacy seed to decrypt your preferences. 
+                Your seed is never shared with the app or our servers.
+              </p>
+            </div>
+          </div>
+        </div>
+
         {/* Security note */}
-        <div className="mt-6 text-center">
+        <div className="mt-4 text-center">
           <p className="text-[var(--foreground-muted)] text-sm">
             You can revoke this access at any time in your{' '}
             <button 

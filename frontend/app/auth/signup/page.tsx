@@ -9,7 +9,8 @@ export default function SignUpPage() {
     email: '',
     password: '',
     confirmPassword: '',
-    name: ''
+    name: '',
+    privacySeed: ''
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -36,7 +37,7 @@ export default function SignUpPage() {
     }
 
     try {
-      await signup(formData.email, formData.password, formData.name || undefined);
+      await signup(formData.email, formData.password, formData.privacySeed, formData.name || undefined);
     } catch (err: any) {
       setError(err.message || 'Sign up failed. Please try again.');
     } finally {
@@ -141,6 +142,31 @@ export default function SignUpPage() {
               placeholder="Confirm your password"
               disabled={isLoading}
             />
+          </div>
+
+          <div>
+            <label htmlFor="privacySeed" className="block text-sm font-medium text-[var(--foreground-light)] mb-2">
+              Privacy Seed
+              <span className="text-xs text-[var(--foreground-muted)] ml-2">
+                (6 digits, choose carefully)
+              </span>
+            </label>
+            <input
+              id="privacySeed"
+              name="privacySeed"
+              type="text"
+              pattern="[0-9]{6}"
+              maxLength={6}
+              required
+              value={formData.privacySeed}
+              onChange={handleChange}
+              className="w-full bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg px-4 py-3 text-white placeholder-[var(--foreground-muted)] focus:outline-none focus:border-[var(--purple-primary)] transition-colors text-center tracking-widest font-mono"
+              placeholder="000000"
+              disabled={isLoading}
+            />
+            <p className="text-xs text-[var(--warning)] mt-1">
+              ⚠️ CRITICAL: This encrypts your preferences. If lost, your data cannot be recovered.
+            </p>
           </div>
 
           <button

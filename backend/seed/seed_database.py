@@ -20,6 +20,7 @@ from app.models.user import User
 from app.models.user_preference import UserPreference
 from app.models.user_app_permission import UserAppPermission
 from app.models.preference_source import PreferenceSource
+from app.models.oauth_client import OAuthClient
 import numpy as np
 import random
 
@@ -39,6 +40,10 @@ TORTOISE_ORM = {
                 "app.models.preference_source", 
                 "app.models.user_app_permission",
                 "app.models.query_log",
+                "app.models.oauth_client",
+                "app.models.oauth_authorization_code",
+                "app.models.oauth_access_token",
+                "app.models.oauth_refresh_token",
             ],
             "default_connection": "default",
         }
@@ -86,9 +91,10 @@ async def seed_apps():
     
     created_count = 0
     for app_data in apps_data:
-        # Check if app already exists
+        # Check if app already exists (by name or API key)
         existing = await App.filter(name=app_data["name"]).first()
-        if existing:
+        existing_key = await App.filter(api_key=app_data["api_key"]).first()
+        if existing or existing_key:
             print(f"   ↪ App '{app_data['name']}' already exists, skipping...")
             continue
         
@@ -104,6 +110,45 @@ async def seed_apps():
         created_count += 1
     
     print(f"📊 Created {created_count} new apps")
+    return created_count
+
+
+async def seed_oauth_clients():
+    """Seed OAuth clients"""
+    print("🔐 Seeding OAuth clients...")
+    
+    # Load OAuth clients data
+    with open("seed/data/oauth_clients.json", "r") as f:
+        clients_data = json.load(f)
+    
+    created_count = 0
+    for client_data in clients_data:
+        # Check if client already exists
+        existing = await OAuthClient.filter(client_id=client_data["client_id"]).first()
+        if existing:
+            print(f"   ↪ OAuth client '{client_data['name']}' already exists, skipping...")
+            continue
+        
+        # Find the linked app
+        app = None
+        if client_data["name"] == "VaultDemo App":
+            app = await App.filter(name="VaultDemo").first()
+        
+        # Create new OAuth client
+        client = await OAuthClient.create(
+            id=uuid4(),
+            name=client_data["name"],
+            client_id=client_data["client_id"],
+            client_secret=client_data["client_secret"],
+            redirect_uris=client_data["redirect_uris"],
+            allowed_scopes=client_data["scopes"],
+            is_public=False,
+            app=app
+        )
+        print(f"   ✅ Created OAuth client: {client.name} (Client ID: {client.client_id})")
+        created_count += 1
+    
+    print(f"📊 Created {created_count} new OAuth clients")
     return created_count
 
 
@@ -266,6 +311,10 @@ async def main():
         apps_created = await seed_apps()
         print()
         
+        # Seed OAuth clients
+        clients_created = await seed_oauth_clients()
+        print()
+        
         # Seed demo user and preferences
         preferences_created = await seed_demo_user_and_preferences()
         print()
@@ -279,12 +328,13 @@ async def main():
         print("🎉 Seeding Complete!")
         print(f"   Categories created: {categories_created}")
         print(f"   Apps created: {apps_created}")
+        print(f"   OAuth clients created: {clients_created}")
         print(f"   Preferences created: {preferences_created}")
         print(f"   App permissions created: {permissions_created}")
         print(f"   Preference sources created: {sources_created}")
         print()
         
-        if categories_created > 0 or apps_created > 0 or preferences_created > 0 or permissions_created > 0 or sources_created > 0:
+        if categories_created > 0 or apps_created > 0 or clients_created > 0 or preferences_created > 0 or permissions_created > 0 or sources_created > 0:
             print("✨ Your Vault database is now ready for use!")
         else:
             print("💡 Database was already seeded. All data is up to date!")

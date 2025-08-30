@@ -207,6 +207,8 @@ async def oauth_token(
 ):
     """OAuth 2.0 token endpoint - accepts form-encoded data per OAuth 2.0 spec"""
     
+    print(f"DEBUG: Token request received - grant_type: '{grant_type}', client_id: '{client_id}', code: '{code}'")
+    
     # Create request object from form data
     request = OAuthTokenRequest(
         grant_type=grant_type,
@@ -219,6 +221,7 @@ async def oauth_token(
     )
     
     if request.grant_type == "authorization_code":
+        print(f"DEBUG: Handling authorization code grant - code: {request.code}, redirect_uri: {request.redirect_uri}")
         return await handle_authorization_code_grant(request)
     elif request.grant_type == "refresh_token":
         return await handle_refresh_token_grant(request)
@@ -236,7 +239,12 @@ async def handle_authorization_code_grant(request: OAuthTokenRequest):
         code=request.code
     ).prefetch_related("client", "user")
     
+    print(f"DEBUG: Auth code lookup result: {auth_code}")
+    if auth_code:
+        print(f"DEBUG: Auth code details - client_id: {auth_code.client.client_id}, redirect_uri: {auth_code.redirect_uri}")
+    
     if not auth_code:
+        print(f"DEBUG: No authorization code found for: {request.code}")
         raise HTTPException(status_code=400, detail="Invalid authorization code")
     
     # Check expiry
@@ -272,8 +280,24 @@ async def handle_authorization_code_grant(request: OAuthTokenRequest):
         if auth_code.code_challenge != expected_challenge:
             raise HTTPException(status_code=400, detail="Invalid code verifier")
     
-    # Generate tokens
-    access_token_jwt = generate_access_token(str(auth_code.user.id), auth_code.client.client_id, auth_code.scopes)
+    # Clean up any existing tokens first to prevent duplicates
+    existing_tokens = await OAuthAccessToken.filter(
+        client=auth_code.client, 
+        user=auth_code.user
+    ).all()
+    
+    for token in existing_tokens:
+        print(f"DEBUG: Deleting existing token: {token.token[:50]}...")
+        # Delete associated refresh tokens first
+        refresh_tokens = await OAuthRefreshToken.filter(access_token=token).all()
+        for refresh_token in refresh_tokens:
+            await refresh_token.delete()
+        await token.delete()
+    
+    # Generate tokens with credentials hash AFTER cleanup
+    access_token_jwt, credentials_hash = await generate_access_token_with_hash(
+        str(auth_code.user.id), auth_code.client.client_id, auth_code.scopes
+    )
     refresh_token_str = secrets.token_urlsafe(32)
     
     # Store tokens in database
@@ -302,7 +326,8 @@ async def handle_authorization_code_grant(request: OAuthTokenRequest):
         token_type="Bearer",
         expires_in=3600,  # 1 hour
         refresh_token=refresh_token_str,
-        scope=" ".join(auth_code.scopes)
+        scope=" ".join(auth_code.scopes),
+        credentials_hash=credentials_hash  # Include for matrix generation
     )
 
 async def handle_refresh_token_grant(request: OAuthTokenRequest):
@@ -315,7 +340,7 @@ async def handle_refresh_token_grant(request: OAuthTokenRequest):
     refresh_token = await OAuthRefreshToken.get_or_none(
         token=request.refresh_token,
         revoked=False
-    ).prefetch_related("client", "access_token")
+    ).prefetch_related("client", "access_token", "user")
     
     if not refresh_token:
         raise HTTPException(status_code=400, detail="Invalid refresh token")
@@ -335,10 +360,10 @@ async def handle_refresh_token_grant(request: OAuthTokenRequest):
     )
     
     # Update access token in database
-    await refresh_token.access_token.update(
-        token=new_access_token_jwt,
-        expires_at=datetime.now(timezone.utc) + timedelta(hours=1)
-    )
+    access_token = refresh_token.access_token
+    access_token.token = new_access_token_jwt
+    access_token.expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+    await access_token.save()
     
     return OAuthTokenResponse(
         access_token=new_access_token_jwt,
@@ -347,8 +372,35 @@ async def handle_refresh_token_grant(request: OAuthTokenRequest):
         scope=" ".join(refresh_token.scopes)
     )
 
+async def generate_access_token_with_hash(user_id: str, client_id: str, scopes: list[str]) -> tuple[str, str]:
+    """Generate JWT access token with user credentials hash for privacy matrix"""
+    
+    # Get user for credentials hash
+    user = await User.get(id=user_id)
+    
+    # Create credentials hash for matrix generation (email as username)
+    credentials_for_hash = f"{user.email}:{user.password_hash}"  # Using stored password hash
+    credentials_hash = hashlib.sha256(credentials_for_hash.encode()).hexdigest()
+    
+    # Add unique timestamp to prevent duplicate tokens
+    current_time = datetime.now(timezone.utc)
+    unique_id = secrets.token_hex(8)  # 16 character random hex
+    
+    payload = {
+        "sub": user_id,
+        "aud": client_id,
+        "scope": " ".join(scopes),
+        "iat": current_time.timestamp(),
+        "exp": (current_time + timedelta(hours=1)).timestamp(),
+        "credentials_hash": credentials_hash,
+        "jti": unique_id  # Unique token identifier
+    }
+    
+    token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+    return token, credentials_hash
+
 def generate_access_token(user_id: str, client_id: str, scopes: list[str]) -> str:
-    """Generate JWT access token"""
+    """Generate JWT access token (backward compatibility)"""
     
     payload = {
         "sub": user_id,

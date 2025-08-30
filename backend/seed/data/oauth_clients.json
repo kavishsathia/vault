@@ -1,0 +1,13 @@
+[
+  {
+    "client_id": "vault_demo_client_123789",
+    "client_secret": "vault_demo_secret_abc123def456ghi789jkl012mno345",
+    "name": "VaultDemo App",
+    "description": "Vault preference integration demo - instant UI personalization",
+    "redirect_uris": ["http://localhost:3001/auth/callback"],
+    "client_type": "confidential",
+    "grant_types": ["authorization_code", "refresh_token"],
+    "response_types": ["code"],
+    "scopes": ["read:preferences", "write:preferences"]
+  }
+]

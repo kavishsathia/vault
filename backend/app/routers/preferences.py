@@ -99,8 +99,13 @@ async def get_top_preferences(
     
     query = UserPreference.filter(user_id=user_id)
     
-    if category:
-        category_obj = await PreferenceCategory.get_or_none(slug=category)
+    # Handle category filtering - default to health-fitness if null or "null"
+    filter_category = category
+    if not category or category == "null":
+        filter_category = "health-fitness"
+    
+    if filter_category:
+        category_obj = await PreferenceCategory.get_or_none(slug=filter_category)
         if not category_obj:
             raise HTTPException(status_code=404, detail="Category not found")
         query = query.filter(category_id=category_obj.id)

@@ -31,7 +31,7 @@ class TopPreferencesResponse(BaseModel):
 
 
 class AddPreferenceRequest(BaseModel):
-    text: str = Field(..., min_length=1, max_length=2000)
+    text: str = Field(..., min_length=1)  # No max limit for encrypted text
     embedding: List[float] = Field(..., min_items=1, max_items=384)
     category_slug: Optional[str] = None
     strength: float = Field(default=1.0, ge=0.0, le=10.0)

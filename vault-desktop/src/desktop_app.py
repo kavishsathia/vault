@@ -10,11 +10,14 @@ import os
 import subprocess
 import threading
 import time
+import tkinter as tk
+from tkinter import messagebox, simpledialog
 from pathlib import Path
 from PIL import Image, ImageDraw
 import pystray
 from pystray import MenuItem as item
 import logging
+import argparse
 from oauth_client import VaultOAuthClient
 from config import config
 
@@ -41,6 +44,11 @@ class VaultDesktopApp:
         # Status tracking
         self.authenticated = False
         self.mcp_server_running = False
+        
+        # Privacy seed management
+        self.config_dir = Path.home() / ".vault"
+        self.config_dir.mkdir(exist_ok=True)
+        self.temp_seed_file = self.config_dir / "temp_seed.txt"
         
         logger.info("Vault Desktop App initialized")
     
@@ -73,6 +81,131 @@ class VaultDesktopApp:
         draw.arc(shackle_rect, 0, 180, fill=icon_color, width=4)
         
         return image
+    
+    def prompt_for_privacy_seed(self) -> bool:
+        """Show GUI prompt for privacy seed and save to temp file"""
+        try:
+            logger.info("Showing privacy seed prompt")
+            
+            # Use macOS-compatible approach with osascript
+            if platform.system() == "Darwin":
+                return self._prompt_seed_macos()
+            else:
+                return self._prompt_seed_tkinter()
+            
+        except Exception as e:
+            logger.error(f"Failed to prompt for seed: {e}")
+            return False
+    
+    def _prompt_seed_macos(self) -> bool:
+        """macOS-specific seed prompt using osascript"""
+        try:
+            # Use AppleScript for native macOS dialog
+            script = '''
+            tell application "System Events"
+                activate
+                set seedInput to display dialog "🔐 Vault Privacy Seed Required\\n\\nAn AI tool is requesting access to your Vault preferences.\\n\\nEnter your 6-digit privacy seed to decrypt your data locally:\\n(This seed is never sent to any server)" default answer "" with hidden answer with title "Vault Privacy"
+                return text returned of seedInput
+            end tell
+            '''
+            
+            result = subprocess.run([
+                'osascript', '-e', script
+            ], capture_output=True, text=True, timeout=60)
+            
+            if result.returncode != 0:
+                logger.info("User cancelled seed prompt")
+                return False
+            
+            seed = result.stdout.strip()
+            
+            # Validate seed format
+            if not self._validate_seed(seed):
+                subprocess.run([
+                    'osascript', '-e', 
+                    'tell application "System Events" to display dialog "Invalid seed format. Please use exactly 6 digits (000000-999999)." with title "Vault Error"'
+                ])
+                return False
+            
+            # Save to temp file for MCP server
+            with open(self.temp_seed_file, 'w') as f:
+                f.write(seed)
+            
+            logger.info("Privacy seed saved to temp file")
+            return True
+            
+        except subprocess.TimeoutExpired:
+            logger.info("Seed prompt timed out")
+            return False
+        except Exception as e:
+            logger.error(f"macOS seed prompt failed: {e}")
+            return False
+    
+    def _prompt_seed_tkinter(self) -> bool:
+        """Fallback Tkinter seed prompt for non-macOS systems"""
+        try:
+            # Create hidden root window
+            root = tk.Tk()
+            root.withdraw()  # Hide the main window
+            root.attributes('-topmost', True)  # Bring to front
+            root.lift()  # Ensure it's on top
+            root.focus_force()  # Force focus
+            
+            # Custom dialog for seed input
+            seed = simpledialog.askstring(
+                "🔐 Vault Privacy Seed Required",
+                "An AI tool is requesting access to your Vault preferences.\n\n"
+                "Enter your 6-digit privacy seed to decrypt your data locally:\n"
+                "(This seed is never sent to any server)",
+                show='*',  # Hide input like password
+                parent=root
+            )
+            
+            root.destroy()
+            
+            if not seed:
+                logger.info("User cancelled seed prompt")
+                return False
+                
+            # Validate seed format
+            if not self._validate_seed(seed):
+                self._show_error("Invalid Seed", "Privacy seed must be exactly 6 digits (000000-999999)")
+                return False
+            
+            # Save to temp file for MCP server
+            with open(self.temp_seed_file, 'w') as f:
+                f.write(seed)
+            
+            logger.info("Privacy seed saved to temp file")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Tkinter seed prompt failed: {e}")
+            return False
+    
+    def _validate_seed(self, seed: str) -> bool:
+        """Validate 6-digit seed format"""
+        import re
+        return bool(re.match(r'^\d{6}$', seed))
+    
+    def _show_error(self, title: str, message: str):
+        """Show error message box"""
+        try:
+            root = tk.Tk()
+            root.withdraw()
+            messagebox.showerror(title, message)
+            root.destroy()
+        except Exception:
+            logger.error(f"Failed to show error dialog: {title} - {message}")
+    
+    def cleanup_temp_files(self):
+        """Clean up temporary files"""
+        try:
+            if self.temp_seed_file.exists():
+                self.temp_seed_file.unlink()
+                logger.info("Cleaned up temporary seed file")
+        except Exception as e:
+            logger.error(f"Failed to cleanup temp files: {e}")
     
     def create_menu(self):
         """Create system tray context menu"""
@@ -276,6 +409,20 @@ class VaultDesktopApp:
                         logger.warning("Token refresh failed - user needs to re-authenticate")
                         self.authenticated = False
                 
+                # Check for seed prompt requests
+                seed_request_file = self.config_dir / "seed_request.txt"
+                if seed_request_file.exists():
+                    logger.info("Seed prompt request detected")
+                    try:
+                        # Remove request file first
+                        seed_request_file.unlink()
+                        logger.info("Removed seed request file, showing prompt...")
+                        # Show seed prompt
+                        success = self.prompt_for_privacy_seed()
+                        logger.info(f"Seed prompt result: {success}")
+                    except Exception as e:
+                        logger.error(f"Failed to handle seed request: {e}")
+                
                 # Update status every 10 seconds
                 self.update_status()
                 
@@ -287,8 +434,8 @@ class VaultDesktopApp:
             except Exception as e:
                 logger.error(f"Status monitor error: {e}")
             
-            # Wait 10 seconds before next check (improved responsiveness)
-            for _ in range(10):
+            # Wait 2 seconds before next check (faster responsiveness for seed prompts)
+            for _ in range(2):
                 if not self.running:
                     break
                 time.sleep(1)
@@ -321,15 +468,38 @@ class VaultDesktopApp:
         self.icon.run()
 
 def main():
-    """Main entry point"""
+    """Main entry point with command line argument support"""
+    parser = argparse.ArgumentParser(description='Vault Desktop App')
+    parser.add_argument('--prompt-seed', action='store_true', 
+                       help='Show privacy seed prompt and exit')
+    
+    args = parser.parse_args()
+    
     try:
         app = VaultDesktopApp()
-        app.run()
+        
+        if args.prompt_seed:
+            # Just prompt for seed and exit
+            logger.info("Showing privacy seed prompt (command line mode)...")
+            success = app.prompt_for_privacy_seed()
+            app.cleanup_temp_files() if not success else None
+            sys.exit(0 if success else 1)
+        else:
+            # Normal system tray mode
+            app.run()
+            
     except KeyboardInterrupt:
         logger.info("Application interrupted by user")
     except Exception as e:
         logger.error(f"Application error: {e}")
         raise
+    finally:
+        # Always cleanup on exit
+        try:
+            if 'app' in locals():
+                app.cleanup_temp_files()
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     main()

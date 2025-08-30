@@ -1,4 +1,6 @@
 // Direct HTTP client for FastAPI backend
+import { privacyTransformService } from '../services/privacy-transform';
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 class APIError extends Error {
@@ -79,7 +81,23 @@ export const apiClient = {
     if (params.category) searchParams.append('category', params.category);
     if (params.minStrength) searchParams.append('min_strength', params.minStrength.toString());
     
-    return fetchFromAPI(`/api/preferences/top?${searchParams}`);
+    const result = await fetchFromAPI(`/api/preferences/top?${searchParams}`);
+    
+    // Decrypt preference texts if privacy matrix is ready
+    if (result.preferences && privacyTransformService.isMatrixReady()) {
+      for (const pref of result.preferences) {
+        if (pref.text) {
+          try {
+            pref.text = await privacyTransformService.decryptText(pref.text);
+          } catch (error) {
+            console.warn('Failed to decrypt preference text:', error);
+            // Keep encrypted text if decryption fails (backward compatibility)
+          }
+        }
+      }
+    }
+    
+    return result;
   },
 
   async createPreference(userId: string, data: {
@@ -96,26 +114,62 @@ export const apiClient = {
       embeddingLength: data.embedding?.length
     });
 
+    // Check if privacy matrix is ready for encryption
+    console.log('🔍 APIClient: PRIVACY MATRIX STATUS:', {
+      isMatrixReady: privacyTransformService.isMatrixReady(),
+      matrixInfo: privacyTransformService.getMatrixInfo()
+    });
+    
+    if (!privacyTransformService.isMatrixReady()) {
+      console.error('❌ APIClient: PRIVACY MATRIX NOT READY!');
+      throw new Error('Privacy matrix not initialized. Please sign in with your privacy seed.');
+    }
+    
+    console.log('✅ APIClient: PRIVACY MATRIX IS READY FOR ENCRYPTION');
+
     const searchParams = new URLSearchParams();
     searchParams.append('user_id', userId);
     
+    console.log('🔐 APIClient: ORIGINAL TEXT:', data.text);
+    
+    // Encrypt the preference text before sending
+    const encryptedText = await privacyTransformService.encryptText(data.text);
+    
+    console.log('🔒 APIClient: ENCRYPTED TEXT:', encryptedText);
+    console.log('🔒 APIClient: ENCRYPTION LENGTH:', encryptedText.length);
+    
+    // Transform embedding if provided
+    const transformedEmbedding = data.embedding 
+      ? privacyTransformService.transformEmbedding(data.embedding)
+      : [];
+    
     const requestBody = {
-      text: data.text,
-      category_slug: data.categoryId, // Note: using category_slug as per API docs
+      text: encryptedText, // Send encrypted text
+      category_slug: data.categoryId,
       strength: data.strength || 1.0,
-      embedding: data.embedding || [], // Use provided embedding or empty array
+      embedding: transformedEmbedding,
     };
 
-    console.log('📤 APIClient: Sending request', {
-      endpoint: `/api/preferences/add?${searchParams}`,
-      bodyKeys: Object.keys(requestBody),
-      embeddingProvided: !!data.embedding
+    console.log('📤 APIClient: SENDING TO BACKEND:', {
+      textIsEncrypted: encryptedText !== data.text,
+      originalTextLength: data.text.length,
+      encryptedTextLength: encryptedText.length,
+      encryptedTextPreview: encryptedText.substring(0, 50) + '...'
     });
     
     const result = await fetchFromAPI(`/api/preferences/add?${searchParams}`, {
       method: 'POST',
       body: JSON.stringify(requestBody),
     });
+
+    // Decrypt the returned text for client display
+    if (result.text) {
+      try {
+        result.text = await privacyTransformService.decryptText(result.text);
+      } catch (error) {
+        console.warn('Failed to decrypt returned preference text:', error);
+      }
+    }
 
     console.log('✅ APIClient: createPreference success', { result });
     return result;
